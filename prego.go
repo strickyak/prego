@@ -44,37 +44,31 @@ type Po struct {
 	Switches map[string]bool
 	Stack    []bool
 	W        io.Writer
+	Serial   int
 }
 
 func Fatalf(s string, args ...interface{}) {
 	log.Fatalf("po preprocessor: ERROR: "+s, args...)
 }
 
-func (po *Po) replaceFromMap(s string, subs map[string]string) string {
+func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) string {
 	if z, ok := subs[s]; ok {
 		return z
+	}
+	if strings.HasPrefix(s, "___") {
+		return Sprintf("_%d%s", serial, s)
 	}
 	return s
 }
 
 func (po *Po) SubstitueMacros(s string) string {
-	println("// SubstitueMacros:", s)
+	serial := po.Serial
+	po.Serial++
+	//println("// SubstitueMacros:", s, serial)
 
-	/////////////// old
-	/*
-			m := MatchMacroCall.FindStringSubmatch(s)
-		 	if len(m) != 3 {
-				Fatalf("bad len from MatchMacroCall.FindStringSubmatch")
-			}
-			name := m[1]
-			argtext := m[2]
-			argwords := strings.Split(argtext, ",")
-	*/
-
-	/////////////// new
 	m := MatchMacroCall2.FindStringSubmatchIndex(s)
 	if m == nil {
-		println(F("No Match, returning %q", s))
+		//println(F("No Match, returning %q", s))
 		return s
 	}
 
@@ -85,14 +79,14 @@ func (po *Po) SubstitueMacros(s string) string {
 	front := s[:m[0]]
 	name := s[m[2]:m[3]]
 	rest := s[m[1]:]
-	println(F("Match, %q ... %q ... %q", front, name, rest))
+	//println(F("Match, %q ... %q ... %q", front, name, rest))
 
 	var argwords []string
 	for {
 		n := ParseArg(rest)
-		println(F("ParseArg < %q > %d", rest, n))
+		//println(F("ParseArg < %q > %d", rest, n))
 		word := po.SubstitueMacros(rest[:n])
-		println(F("word=", word))
+		//println(F("word=", word))
 		argwords = append(argwords, word)
 		delim := rest[n]
 		rest = rest[n+1:]
@@ -113,13 +107,13 @@ func (po *Po) SubstitueMacros(s string) string {
 	for i, arg := range macro.Args {
 		subs[arg] = argwords[i]
 	}
-	replacer := func(word string) string { return po.replaceFromMap(word, subs) }
+	replacer := func(word string) string { return po.replaceFromMap(word, subs, serial) }
 
 	for _, line := range strings.Split(macro.Body, "\n") {
 		if len(line) > 0 {
 			l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
 			l3 := po.SubstitueMacros(l2)
-			Fprintln(po.W, l3)
+			Fprint(po.W, l3 + ";")
 		}
 	}
 

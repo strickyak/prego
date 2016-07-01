@@ -17,8 +17,8 @@ var Macros = map[string]*Macro{
 	},
 	"SUM": &Macro{
 		Args:   []string{"A", "B"},
-		Body:   "____z := A + B",
-		Result: "(____z)",
+		Body:   "___z := A + B",
+		Result: "(___z)",
 	},
 }
 
@@ -41,8 +41,7 @@ func main() {
 	e1 := `package main
 func main() {
   println((444 + 444))
-____z := 100 +  11
-  println((____z))
+_5___z := 100 +  11;  println((_5___z))
 }
 `
 

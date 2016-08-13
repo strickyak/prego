@@ -26,16 +26,42 @@ import (
 
 var F = Sprintf
 
-var Match = regexp.MustCompile(`[ \t]*//#([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`).FindStringSubmatch
+// MatchCond looks for "//#word" (for some word) (as first nonwhite chars)
+// followed by possibly identifier (after some whitespace).
+var MatchCond = regexp.MustCompile(`[ \t]*//#([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
 
-var MatchMacroCall = regexp.MustCompile(`\binline[.]([A-Za-z0-9_]+)[(]([^()]*)[)]`)
-var MatchMacroCall2 = regexp.MustCompile(`\binline[.]([A-Za-z0-9_]+)[(]`)
+var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*macro\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]`)
+var MatchMacroReturn = regexp.MustCompile(`^\s*return\s*(.*)$`)
+var MatchMacroFinal = /*'('*/ regexp.MustCompile(`^\s*[}]\s*$`)
+
+/*
+// Macro Syntax:
+func (macro) Double(a) {
+	return (a) + (a)
+}
+func (macro) Cond(a, t, b, c) {
+	var ret t
+	if a {
+		t = b
+	} else {
+		t = c
+	}
+	return t
+}
+func (macro) Assign(a, b) {
+	a = b
+	return
+}
+
+*/
+
+var MatchMacroCall = regexp.MustCompile(`\bmacro[.]([A-Za-z0-9_]+)[(]`)
 
 var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
 
 type Macro struct {
 	Args   []string
-	Body   string
+	Body   []string
 	Result string
 }
 
@@ -45,6 +71,8 @@ type Po struct {
 	Stack    []bool
 	W        io.Writer
 	Serial   int
+	Enabled  bool
+	Lines    []string
 }
 
 func Fatalf(s string, args ...interface{}) {
@@ -66,20 +94,20 @@ func (po *Po) SubstitueMacros(s string) string {
 	po.Serial++
 	//println("// SubstitueMacros:", s, serial)
 
-	m := MatchMacroCall2.FindStringSubmatchIndex(s)
+	m := MatchMacroCall.FindStringSubmatchIndex(s)
 	if m == nil {
-		//println(F("No Match, returning %q", s))
+		//println(F("No MatchMacroCall, returning %q", s))
 		return s
 	}
 
 	if len(m) != 4 {
-		Fatalf("bad len from MatchMacroCall2.FindStringSubmatchIndex")
+		Fatalf("bad len from MatchMacroCall.FindStringSubmatchIndex")
 	}
 
 	front := s[:m[0]]
 	name := s[m[2]:m[3]]
 	rest := s[m[1]:]
-	//println(F("Match, %q ... %q ... %q", front, name, rest))
+	//println(F("MatchMacroCall, %q ... %q ... %q", front, name, rest))
 
 	var argwords []string
 	for {
@@ -109,11 +137,11 @@ func (po *Po) SubstitueMacros(s string) string {
 	}
 	replacer := func(word string) string { return po.replaceFromMap(word, subs, serial) }
 
-	for _, line := range strings.Split(macro.Body, "\n") {
+	for _, line := range macro.Body {
 		if len(line) > 0 {
 			l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
 			l3 := po.SubstitueMacros(l2)
-			Fprint(po.W, l3 + ";")
+			Fprint(po.W, l3+";")
 		}
 	}
 
@@ -121,9 +149,26 @@ func (po *Po) SubstitueMacros(s string) string {
 	return front + z + po.SubstitueMacros(rest)
 }
 
-func (po *Po) DoLine(lineNum int, s string) {
-	m := Match(s)
+func (po *Po) calculateIsEnabled() bool {
+	for i, e := range po.Stack {
+		println("calculateIsEnabled:", i, e)
+		if !e {
+			println("calculateIsEnabled: return false")
+			return false
+		}
+	}
+	println("calculateIsEnabled: return true")
+	return true
+}
 
+func (po *Po) DoLine(i int) int {
+	s := po.Lines[i]
+	lineNum := i + 1
+  println("Input s: ;", s, "  ; [i]=", i)
+
+	// First process cond (//#if & //#endif).
+	m := MatchCond.FindStringSubmatch(s)
+  println("MatchCond: ", len(m), m != nil)
 	if m != nil {
 		switch m[1] {
 		case "if":
@@ -138,20 +183,121 @@ func (po *Po) DoLine(lineNum int, s string) {
 		default:
 			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
 		}
-		Fprintln(po.W, "")
+		// The directive becomes a blank line below.
+    println("Clear1");
+		s = ""
+		po.Enabled = po.calculateIsEnabled()
+	}
 
-	} else {
-		printing := true
-		for _, e := range po.Stack {
-			if !e {
-				printing = false
+	// Treat as a blank line, if not Enabled.
+	if !po.Enabled {
+    println("Clear2");
+		s = ""
+	}
+
+	// Next process macro definitions.
+	mm := MatchMacroDef.FindStringSubmatch(s)
+  println("MatchMacroDef: ", len(mm), mm != nil)
+	if mm != nil {
+		name := mm[1]
+		arglist := mm[2]
+
+		var argwords []string
+		for _, argword := range strings.Split(arglist, ",") {
+			a := strings.Trim(argword, " \t")
+			if len(a) == 0 {
+				continue
+			}
+			if MatchIdentifier.FindString(a) != a {
+				panic("not an identifier: " + a)
+			}
+			argwords = append(argwords, a)
+		}
+
+		var body []string
+		var result string
+		for {
+			i++
+			lineNum++
+			Fprintln(po.W, "")
+			b := po.Lines[i]
+      println("Consider:", b)
+			mr := MatchMacroReturn.FindStringSubmatch(b)
+			if mr == nil {
+				// Just a body line.
+				body = append(body, b)
+        println("appended:", b)
+			} else {
+				// It's the return line.
+				result = mr[1]
+				break
+        println("break result:", b)
 			}
 		}
 
-		if printing {
-			Fprintln(po.W, po.SubstitueMacros(s))
-		} else {
-			Fprintln(po.W, "")
+		// Read one more line, which must close the macro.
+		i++
+		lineNum++
+		b := po.Lines[i]
+      println("Consider final:", b)
+		if MatchMacroFinal.FindString(b) == "" {
+			panic("Expected final CloseBrace alone on a line after macro return line")
 		}
+		Fprintln(po.W, "")
+
+		if _, ok := po.Macros[name]; ok {
+			panic("macro already defined: " + name)
+		}
+
+		po.Macros[name] = &Macro{
+			Args:   argwords,
+			Body:   body,
+			Result: result,
+		}
+
+		s = ""
+    println("Clear3");
 	}
+
+  println("Raw s: ", s)
+	Fprintln(po.W, po.SubstitueMacros(s))
+	return i + 1
 }
+
+//func (po *Po) XXXDoLine(lineNum int, s string) {
+//	m := MatchDirective(s)
+//
+//	if m != nil {
+//		switch m[1] {
+//		case "if":
+//			pred, _ := po.Switches[m[2]]
+//			po.Stack = append(po.Stack, pred)
+//		case "endif":
+//			n := len(po.Stack)
+//			if n < 2 {
+//				Fatalf("Line %d: Unmatched #endif", lineNum)
+//			}
+//			po.Stack = po.Stack[:n-1]
+//		case "macro":
+//      TODO
+//		default:
+//			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
+//		}
+//		Fprintln(po.W, "")
+//
+//	} else {
+//		printing := true
+//		for _, e := range po.Stack {
+//			if !e {
+//				printing = false
+//			}
+//		}
+//
+//		if printing {
+//			Fprintln(po.W, po.SubstitueMacros(s))
+//		} else {
+//			Fprintln(po.W, "")
+//		}
+//	}
+//}
+//

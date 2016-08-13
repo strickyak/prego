@@ -27,6 +27,7 @@ import . "github.com/strickyak/prego"
 
 var Vars = make(map[string]bool)
 
+/*
 var Macros = map[string]*Macro{
 	"DOUBLE": &Macro{
 		Args:   []string{"X"},
@@ -39,6 +40,7 @@ var Macros = map[string]*Macro{
 		Result: "(____z)",
 	},
 }
+*/
 
 func main() {
 	env := os.Getenv("PO")
@@ -49,16 +51,22 @@ func main() {
 	}
 
 	po := &Po{
-		Macros:   Macros,
+		Macros:   make(map[string]*Macro),
 		Switches: switches,
 		Stack:    []bool{true},
 		W:        os.Stdout,
+    Enabled:  true,
 	}
 
 	bs := bufio.NewScanner(os.Stdin)
-	lineNum := 0
+  var lines []string
 	for bs.Scan() {
-		lineNum++
-		po.DoLine(lineNum, bs.Text())
+    lines = append(lines, bs.Text())
 	}
+
+  po.Lines = lines
+  i := 0
+  for i < len(lines) {
+    i = po.DoLine(i)
+  }
 }

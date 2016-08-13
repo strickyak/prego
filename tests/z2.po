@@ -2,20 +2,22 @@
 
 package main
 
+import "fmt"
+
 func (macro) DOUBLE(x) {
   return (x) + (x)
 }
 
 func (macro) SUM(A, B) {
-  ___z := A + B
+  ___z := (A) + (B)
   return ___z
 }
 
 func main() {
-  println("Double 5 =", macro.DOUBLE(5))
-  println("Sum 5, 8 =", macro.SUM(5, 8))
-  println("Sum (5, 8), (3, 4) =", macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4)))
-  println("Double Sum (5, 8), (3, 4) =", macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4))))
-  println("Double Double Sum (5, 8), (3, 4) =", macro.DOUBLE(macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4)))))
-  println("Sum 1 Double Double Sum (5, 8), (3, 4) =", macro.SUM(1, macro.DOUBLE(macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4))))))
+  fmt.Println("Double 5 =", macro.DOUBLE(5))
+  fmt.Println("Sum 5, 8 =", macro.SUM(5, 8))
+  fmt.Println("Sum (5, 8), (3, 4) =", macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4)))
+  fmt.Println("Double Sum (5, 8), (3, 4) =", macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4))))
+  fmt.Println("Double Double Sum (5, 8), (3, 4) =", macro.DOUBLE(macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4)))))
+  fmt.Println("Sum 1 Double Double Sum (5, 8), (3, 4) =", macro.SUM(1, macro.DOUBLE(macro.DOUBLE(macro.SUM(macro.SUM(5, 8), macro.SUM(3, 4))))))
 }

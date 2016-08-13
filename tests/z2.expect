@@ -1,0 +1,6 @@
+Double 5 = 10
+Sum 5, 8 = 13
+Sum (5, 8), (3, 4) = 20
+Double Sum (5, 8), (3, 4) = 40
+Double Double Sum (5, 8), (3, 4) = 80
+Sum 1 Double Double Sum (5, 8), (3, 4) = 81

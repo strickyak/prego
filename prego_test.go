@@ -29,7 +29,7 @@ func TestMacros(t *testing.T) {
 		Switches: map[string]bool{"alpha": true, "beta": true},
 		Stack:    []bool{true},
 		W:        w,
-    Enabled:  true,
+		Enabled:  true,
 	}
 
 	s1 := `package main
@@ -46,9 +46,9 @@ _5___z := 100 +  11;  println((_5___z))
 }
 `
 
-  po.Lines = strings.Split(s1, "\n")
-  i := 0
-  for i < len(po.Lines) {
+	po.Lines = strings.Split(s1, "\n")
+	i := 0
+	for i < len(po.Lines) {
 		i = po.DoLine(i)
 	}
 	r1 := w.String()

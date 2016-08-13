@@ -17,56 +17,81 @@ Po Syntax:
 package main
 
 import (
-	"bufio"
-	//"log"
+	"github.com/strickyak/prego"
+
+	"log"
 	"os"
-	//"regexp"
 	"strings"
 )
-import . "github.com/strickyak/prego"
 
-var Vars = make(map[string]bool)
+// Switches may be set with ` --set switchName ` args.
+var Switches = make(map[string]bool)
 
-/*
-var Macros = map[string]*Macro{
-	"DOUBLE": &Macro{
-		Args:   []string{"X"},
-		Body:   "",
-		Result: "(X + X)",
-	},
-	"SUM": &Macro{
-		Args:   []string{"A", "B"},
-		Body:   "____z := A + B",
-		Result: "(____z)",
-	},
+// Sources may be added with ` --source filename ` args.
+var Sources []string
+
+// ParseArgs accepts argument pairs:
+//    --set varname      (sets the varname true for conditional compilation)
+//    -set varname       (same)
+//    --source filename   (read for macro definitions; do not output lines)
+//    -source filename    (same)
+func ParseArgs() {
+	args := os.Args[1:] // Leave off command name.
+
+	for len(args) > 1 && strings.HasPrefix(args[0], "-") {
+		key, value := args[0], args[1]
+		switch key {
+		case "-set", "--set":
+			Switches[value] = true
+		case "-source", "--source":
+			Sources = append(Sources, value)
+		default:
+			log.Fatalf("Unknown command line flag: %q", key)
+		}
+	}
+	if len(args) > 0 {
+		log.Fatalf("Extra command line arguments: %#v", args)
+	}
 }
-*/
+
+type Sink int
+
+func (Sink) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
 
 func main() {
-	env := os.Getenv("PO")
+	ParseArgs()
 
-	switches := make(map[string]bool)
+	// Old style switches: from env.
+	// TODO: Delete.
+	env := os.Getenv("PO")
 	for _, s := range strings.Split(env, ",") {
-		switches[s] = true
+		Switches[s] = true
 	}
 
-	po := &Po{
-		Macros:   make(map[string]*Macro),
-		Switches: switches,
+	po := &prego.Po{
+		Macros:   make(map[string]*prego.Macro),
+		Switches: Switches,
 		Stack:    []bool{true},
 		W:        os.Stdout,
-    Enabled:  true,
+		Enabled:  true,
 	}
 
-	bs := bufio.NewScanner(os.Stdin)
-  var lines []string
-	for bs.Scan() {
-    lines = append(lines, bs.Text())
+	// Slurp the Source files into the Sink.
+	for _, f := range Sources {
+		r, err := os.Open(f)
+		if err != nil {
+			log.Fatalf("Cannot read file %q: %v", f, err)
+		}
+		var w Sink
+		po.Slurp(r, w)
+		err = r.Close()
+		if err != nil {
+			log.Fatalf("Cannot close file %q: %v", f, err)
+		}
 	}
 
-  po.Lines = lines
-  i := 0
-  for i < len(lines) {
-    i = po.DoLine(i)
-  }
+	// Finally slurp stdin to stdout.
+	po.Slurp(os.Stdin, os.Stdout)
 }

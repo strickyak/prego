@@ -15,11 +15,11 @@ Po Syntax:
 package prego
 
 import . "fmt"
+
 import (
-	//"bufio"
+	"bufio"
 	"io"
 	"log"
-	//"os"
 	"regexp"
 	"strings"
 )
@@ -164,11 +164,11 @@ func (po *Po) calculateIsEnabled() bool {
 func (po *Po) DoLine(i int) int {
 	s := po.Lines[i]
 	lineNum := i + 1
-  println("Input s: ;", s, "  ; [i]=", i)
+	println("Input s: ;", s, "  ; [i]=", i)
 
 	// First process cond (//#if & //#endif).
 	m := MatchCond.FindStringSubmatch(s)
-  println("MatchCond: ", len(m), m != nil)
+	println("MatchCond: ", len(m), m != nil)
 	if m != nil {
 		switch m[1] {
 		case "if":
@@ -184,20 +184,20 @@ func (po *Po) DoLine(i int) int {
 			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
 		}
 		// The directive becomes a blank line below.
-    println("Clear1");
+		println("Clear1")
 		s = ""
 		po.Enabled = po.calculateIsEnabled()
 	}
 
 	// Treat as a blank line, if not Enabled.
 	if !po.Enabled {
-    println("Clear2");
+		println("Clear2")
 		s = ""
 	}
 
 	// Next process macro definitions.
 	mm := MatchMacroDef.FindStringSubmatch(s)
-  println("MatchMacroDef: ", len(mm), mm != nil)
+	println("MatchMacroDef: ", len(mm), mm != nil)
 	if mm != nil {
 		name := mm[1]
 		arglist := mm[2]
@@ -221,17 +221,17 @@ func (po *Po) DoLine(i int) int {
 			lineNum++
 			Fprintln(po.W, "")
 			b := po.Lines[i]
-      println("Consider:", b)
+			println("Consider:", b)
 			mr := MatchMacroReturn.FindStringSubmatch(b)
 			if mr == nil {
 				// Just a body line.
 				body = append(body, b)
-        println("appended:", b)
+				println("appended:", b)
 			} else {
 				// It's the return line.
 				result = mr[1]
 				break
-        println("break result:", b)
+				println("break result:", b)
 			}
 		}
 
@@ -239,7 +239,7 @@ func (po *Po) DoLine(i int) int {
 		i++
 		lineNum++
 		b := po.Lines[i]
-      println("Consider final:", b)
+		println("Consider final:", b)
 		if MatchMacroFinal.FindString(b) == "" {
 			panic("Expected final CloseBrace alone on a line after macro return line")
 		}
@@ -256,48 +256,25 @@ func (po *Po) DoLine(i int) int {
 		}
 
 		s = ""
-    println("Clear3");
+		println("Clear3")
 	}
 
-  println("Raw s: ", s)
+	println("Raw s: ", s)
 	Fprintln(po.W, po.SubstitueMacros(s))
 	return i + 1
 }
 
-//func (po *Po) XXXDoLine(lineNum int, s string) {
-//	m := MatchDirective(s)
-//
-//	if m != nil {
-//		switch m[1] {
-//		case "if":
-//			pred, _ := po.Switches[m[2]]
-//			po.Stack = append(po.Stack, pred)
-//		case "endif":
-//			n := len(po.Stack)
-//			if n < 2 {
-//				Fatalf("Line %d: Unmatched #endif", lineNum)
-//			}
-//			po.Stack = po.Stack[:n-1]
-//		case "macro":
-//      TODO
-//		default:
-//			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
-//		}
-//		Fprintln(po.W, "")
-//
-//	} else {
-//		printing := true
-//		for _, e := range po.Stack {
-//			if !e {
-//				printing = false
-//			}
-//		}
-//
-//		if printing {
-//			Fprintln(po.W, po.SubstitueMacros(s))
-//		} else {
-//			Fprintln(po.W, "")
-//		}
-//	}
-//}
-//
+func (po *Po) Slurp(r io.Reader, w io.Writer) {
+	bs := bufio.NewScanner(r)
+	var lines []string
+	for bs.Scan() {
+		lines = append(lines, bs.Text())
+	}
+
+	po.W = w
+	po.Lines = lines
+	i := 0
+	for i < len(lines) {
+		i = po.DoLine(i)
+	}
+}

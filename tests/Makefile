@@ -1,6 +1,7 @@
 # .../src/github.com/strickyak/prego/tests/Makefile
 
 all: Run-z2
+	echo Tests OKAY
 
 clean:
 	-rm -f tmp_*

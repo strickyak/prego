@@ -34,7 +34,7 @@ so line numbers on the generated `.go` file match the input `.po` file.
 
 ```
      func (macro) DOUBLE(x) {
-       return (x) + (x)
+       return ((x) + (x))
      }
 
      func (macro) SUM(A, B) {
@@ -59,6 +59,9 @@ of the body, followed by a line with only `}`.
 
 If the macro is a statement rather than an expression,
 the `return` line should be only the word `return`.
+
+As in C macros, you should fully parenthesize both the inputs
+and the return value of the macro, to avoid operator priority errors.
 
 ## Macro Call Syntax
 

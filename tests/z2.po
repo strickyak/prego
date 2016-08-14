@@ -5,7 +5,7 @@ package main
 import "fmt"
 
 func (macro) DOUBLE(x) {
-	return (x) + (x)
+	return ((x) + (x))
 }
 
 func (macro) SUM(A, B) {
@@ -17,6 +17,16 @@ func (macro) ASSIGN(v, a) {
 	/* Only slash-star comments are OK in a macro. */
 	v = (a)
 	return
+}
+
+func (macro) cond(predicate, ifTrue, ifFalse, resultType) {
+	var ___z resultType
+	if predicate {
+		___z = (ifTrue)
+	} else {
+		___z = (ifFalse)
+	}
+	return ___z
 }
 
 func main() {
@@ -31,4 +41,5 @@ func main() {
 	macro.ASSIGN(x, 23)
 	macro.ASSIGN(y, 42)
 	fmt.Println("x =", x, "; y =", y)
+	fmt.Println("x < y ?", macro.cond(x < y, "Yes", "No", string))
 }

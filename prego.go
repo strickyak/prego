@@ -1,17 +1,3 @@
-/*
-Preprocess a .po file into a .go file.
-
-Usage:
-
-   PO=sym1,sym2,sym3...  go run preprocess/main.go < runtime.po > runtime.go
-
-Po Syntax:
-
-  //#if sym1
-  ...
-  //#endif
-
-*/
 package prego
 
 import . "fmt"
@@ -24,39 +10,14 @@ import (
 	"strings"
 )
 
-var F = Sprintf
-
 // MatchCond looks for "//#word" (for some word) (as first nonwhite chars)
 // followed by possibly identifier (after some whitespace).
-var MatchCond = regexp.MustCompile(`[ \t]*//#([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
+var MatchCond = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
 
-var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*macro\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]`)
+var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*macro\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]\s*[{]`)
 var MatchMacroReturn = regexp.MustCompile(`^\s*return\s*(.*)$`)
-var MatchMacroFinal = /*'('*/ regexp.MustCompile(`^\s*[}]\s*$`)
-
-/*
-// Macro Syntax:
-func (macro) Double(a) {
-	return (a) + (a)
-}
-func (macro) Cond(a, t, b, c) {
-	var ret t
-	if a {
-		t = b
-	} else {
-		t = c
-	}
-	return t
-}
-func (macro) Assign(a, b) {
-	a = b
-	return
-}
-
-*/
-
+var MatchMacroFinal = regexp.MustCompile(`^\s*[}]\s*$`)
 var MatchMacroCall = regexp.MustCompile(`\bmacro[.]([A-Za-z0-9_]+)[(]`)
-
 var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
 
 type Macro struct {
@@ -92,11 +53,9 @@ func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) strin
 func (po *Po) SubstitueMacros(s string) string {
 	serial := po.Serial
 	po.Serial++
-	//println("// SubstitueMacros:", s, serial)
 
 	m := MatchMacroCall.FindStringSubmatchIndex(s)
 	if m == nil {
-		//println(F("No MatchMacroCall, returning %q", s))
 		return s
 	}
 
@@ -107,14 +66,11 @@ func (po *Po) SubstitueMacros(s string) string {
 	front := s[:m[0]]
 	name := s[m[2]:m[3]]
 	rest := s[m[1]:]
-	//println(F("MatchMacroCall, %q ... %q ... %q", front, name, rest))
 
 	var argwords []string
 	for {
 		n := ParseArg(rest)
-		//println(F("ParseArg < %q > %d", rest, n))
 		word := po.SubstitueMacros(rest[:n])
-		//println(F("word=", word))
 		argwords = append(argwords, word)
 		delim := rest[n]
 		rest = rest[n+1:]
@@ -150,25 +106,20 @@ func (po *Po) SubstitueMacros(s string) string {
 }
 
 func (po *Po) calculateIsEnabled() bool {
-	for i, e := range po.Stack {
-		println("calculateIsEnabled:", i, e)
+	for _, e := range po.Stack {
 		if !e {
-			println("calculateIsEnabled: return false")
 			return false
 		}
 	}
-	println("calculateIsEnabled: return true")
 	return true
 }
 
 func (po *Po) DoLine(i int) int {
 	s := po.Lines[i]
 	lineNum := i + 1
-	println("Input s: ;", s, "  ; [i]=", i)
 
 	// First process cond (//#if & //#endif).
 	m := MatchCond.FindStringSubmatch(s)
-	println("MatchCond: ", len(m), m != nil)
 	if m != nil {
 		switch m[1] {
 		case "if":
@@ -184,20 +135,17 @@ func (po *Po) DoLine(i int) int {
 			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
 		}
 		// The directive becomes a blank line below.
-		println("Clear1")
 		s = ""
 		po.Enabled = po.calculateIsEnabled()
 	}
 
 	// Treat as a blank line, if not Enabled.
 	if !po.Enabled {
-		println("Clear2")
 		s = ""
 	}
 
 	// Next process macro definitions.
 	mm := MatchMacroDef.FindStringSubmatch(s)
-	println("MatchMacroDef: ", len(mm), mm != nil)
 	if mm != nil {
 		name := mm[1]
 		arglist := mm[2]
@@ -221,17 +169,14 @@ func (po *Po) DoLine(i int) int {
 			lineNum++
 			Fprintln(po.W, "")
 			b := po.Lines[i]
-			println("Consider:", b)
 			mr := MatchMacroReturn.FindStringSubmatch(b)
 			if mr == nil {
 				// Just a body line.
 				body = append(body, b)
-				println("appended:", b)
 			} else {
 				// It's the return line.
 				result = mr[1]
 				break
-				println("break result:", b)
 			}
 		}
 
@@ -239,7 +184,6 @@ func (po *Po) DoLine(i int) int {
 		i++
 		lineNum++
 		b := po.Lines[i]
-		println("Consider final:", b)
 		if MatchMacroFinal.FindString(b) == "" {
 			panic("Expected final CloseBrace alone on a line after macro return line")
 		}
@@ -256,10 +200,8 @@ func (po *Po) DoLine(i int) int {
 		}
 
 		s = ""
-		println("Clear3")
 	}
 
-	println("Raw s: ", s)
 	Fprintln(po.W, po.SubstitueMacros(s))
 	return i + 1
 }

@@ -37,7 +37,7 @@ type Po struct {
 }
 
 func Fatalf(s string, args ...interface{}) {
-	log.Fatalf("po preprocessor: ERROR: "+s, args...)
+	log.Fatalf("prego preprocessor: ERROR: "+s, args...)
 }
 
 func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) string {

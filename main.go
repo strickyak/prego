@@ -48,6 +48,7 @@ func ParseArgs() {
 		default:
 			log.Fatalf("Unknown command line flag: %q", key)
 		}
+		args = args[2:]
 	}
 	if len(args) > 0 {
 		log.Fatalf("Extra command line arguments: %#v", args)

@@ -208,9 +208,13 @@ func (po *Po) DoLine(i int) int {
 
 func (po *Po) Slurp(r io.Reader, w io.Writer) {
 	bs := bufio.NewScanner(r)
+	bs.Buffer(make([]byte, 100000), 100000000)
 	var lines []string
 	for bs.Scan() {
 		lines = append(lines, bs.Text())
+	}
+	if err := bs.Err(); err != nil {
+		panic(err)
 	}
 
 	po.W = w

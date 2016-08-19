@@ -73,13 +73,6 @@ func (Sink) Write(p []byte) (n int, err error) {
 func main() {
 	ParseArgs()
 
-	// Old style switches: from env.
-	// TODO: Delete.
-	env := os.Getenv("PO")
-	for _, s := range strings.Split(env, ",") {
-		Switches[s] = true
-	}
-
 	po := &prego.Po{
 		Macros:   make(map[string]*prego.Macro),
 		Switches: Switches,

@@ -5,11 +5,12 @@ PREGO:  A preprocessor for golang
 The command copies stdin to stdout,
 making macro substitutions and observing `//#if` directives.
 ```
-   export PO=flag1,flag2,...
-   go run main.go --set Foo --source /my/work/macros.po < /my/work/stuff.po > /my/work/stuff.go
+   go run main.go --set Foo --source /my/work/macros.po --noinline < /my/work/stuff.po > /my/work/stuff.go
 ```
 Command line arguments can be `--set Label` or `--source filename`.
 Both can be used more than once.
+
+Another command line argument can be  --noinline` which will be described later.
 
 Labels that are set this way are considered true for conditional complilation; others are false.
 
@@ -79,3 +80,21 @@ When a source line is processed, macro calls are processed.
 What is emitted is the body lines of the macro, terminated with
 semicolons (not newlines), and finally the source line with its
 macro call syntax replaced by what comes after the word return.
+
+## Inline Macros
+
+If you say `func (inline)` instead of `func (macro)`,
+it works just like `func (macro)`, unless you specify `--noinline`,
+in which case it turns into a function defintion instead of a macro.
+In this case you need to specify argument types and return type
+like you do for a function.
+
+## Number-Suffixed Identifiers
+
+If syntax appears like `n[id]` where n in a decimal number and id
+is an identifier, it turns into `id_n`.  This lets you turn one
+parameter name into several related identifiers.  The choice of syntax
+assumes that suffixing numbers does not appear in the target
+langauge.  This is the case for Go (but not for C!).
+
+Example:  `2[bird]` becomes `bird_2`.

@@ -4,13 +4,21 @@ package main
 
 import "fmt"
 
-func (macro) DOUBLE(x) {
+func (inline) DOUBLE(x int) int {
 	return ((x) + (x))
 }
 
-func (macro) SUM(A, B) {
+func (inline) SUM(A int, B int) int {
 	___z := (A) + (B)
 	return ___z
+}
+
+func (macro) sumsq(X) {
+	return 1[X]*1[X] + 2[X]*2[X]
+}
+
+func (macro) comma(X) {
+	return 1[X], 2[X]
 }
 
 func (macro) ASSIGN(v, a) {
@@ -42,4 +50,7 @@ func main() {
 	macro.ASSIGN(y, 42)
 	fmt.Println("x =", x, "; y =", y)
 	fmt.Println("x < y ?", macro.cond(x < y, "Yes", "No", string))
+
+	side_1, side_2 := 3, 4
+	fmt.Println("sumsq:", macro.comma(side), macro.sumsq(side))
 }

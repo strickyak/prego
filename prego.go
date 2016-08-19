@@ -14,16 +14,21 @@ import (
 // followed by possibly identifier (after some whitespace).
 var MatchCond = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
 
-var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*macro\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]\s*[{]`)
+var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*(inline|macro)\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]([^{}]*)[{]`)
 var MatchMacroReturn = regexp.MustCompile(`^\s*return\s*(.*)$`)
 var MatchMacroFinal = regexp.MustCompile(`^\s*[}]\s*$`)
-var MatchMacroCall = regexp.MustCompile(`\bmacro[.]([A-Za-z0-9_]+)[(]`)
+var MatchMacroCall = regexp.MustCompile(`\b(?:inline|macro)[.]([A-Za-z0-9_]+)[(]`)
 var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
+var MatchFormalArg = regexp.MustCompile(`([A-Za-z0-9_]+) *([^(),]*)`)
+
+var MatchNumberSuffix = regexp.MustCompile(`^(.*)\b([0-9]+)\s*[[]\s*([A-Za-z0-9_]+)\s*[]](.*)$`)
 
 type Macro struct {
-	Args   []string
-	Body   []string
-	Result string
+	Inline  bool // T if `inline`, F if `macro`
+	Args    []string
+	Body    []string
+	Result  string
+	RetType string
 }
 
 type Po struct {
@@ -34,6 +39,7 @@ type Po struct {
 	Serial   int
 	Enabled  bool
 	Lines    []string
+	Inlining bool
 }
 
 func Fatalf(s string, args ...interface{}) {
@@ -50,13 +56,24 @@ func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) strin
 	return s
 }
 
+func SuffixNumbers(s string) string {
+	for {
+		m := MatchNumberSuffix.FindStringSubmatch(s)
+		if m == nil {
+			break
+		}
+		s = Sprintf("%s %s_%s %s", m[1], m[3], m[2], m[4])
+	}
+	return s
+}
+
 func (po *Po) SubstitueMacros(s string) string {
 	serial := po.Serial
 	po.Serial++
 
 	m := MatchMacroCall.FindStringSubmatchIndex(s)
 	if m == nil {
-		return s
+		return SuffixNumbers(s)
 	}
 
 	if len(m) != 4 {
@@ -83,6 +100,7 @@ func (po *Po) SubstitueMacros(s string) string {
 	if !ok {
 		Fatalf("unknown macro: %q", name)
 	}
+	log.Printf("Applying macro %q formals %v got %v", name, macro.Args, argwords)
 	if len(argwords) != len(macro.Args) {
 		Fatalf("got %d args for macro %q, but wanted %d args", len(argwords), name, len(macro.Args))
 	}
@@ -91,18 +109,26 @@ func (po *Po) SubstitueMacros(s string) string {
 	for i, arg := range macro.Args {
 		subs[arg] = argwords[i]
 	}
-	replacer := func(word string) string { return po.replaceFromMap(word, subs, serial) }
 
-	for _, line := range macro.Body {
-		if len(line) > 0 {
-			l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
-			l3 := po.SubstitueMacros(l2)
-			Fprint(po.W, l3+";")
+	var z string
+	if !macro.Inline || po.Inlining {
+
+		replacer := func(word string) string { return po.replaceFromMap(word, subs, serial) }
+
+		for _, line := range macro.Body {
+			if len(line) > 0 {
+				l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
+				l3 := po.SubstitueMacros(l2)
+				Fprint(po.W, l3+";")
+			}
 		}
-	}
 
-	z := MatchIdentifier.ReplaceAllStringFunc(macro.Result, replacer)
-	return front + z + po.SubstitueMacros(rest)
+		z = MatchIdentifier.ReplaceAllStringFunc(macro.Result, replacer)
+
+	} else {
+		z = Sprintf("%s(%s)", name, strings.Join(argwords, ", "))
+	}
+	return SuffixNumbers(front + z + po.SubstitueMacros(rest))
 }
 
 func (po *Po) calculateIsEnabled() bool {
@@ -147,19 +173,32 @@ func (po *Po) DoLine(i int) int {
 	// Next process macro definitions.
 	mm := MatchMacroDef.FindStringSubmatch(s)
 	if mm != nil {
-		name := mm[1]
-		arglist := mm[2]
+		inline := mm[1] == "inline" // inline or macro
+		name := mm[2]
+		arglist := mm[3]
+		retType := mm[4]
+		log.Printf("Def: name %q arglist %#v", name, arglist)
 
 		var argwords []string
 		for _, argword := range strings.Split(arglist, ",") {
 			a := strings.Trim(argword, " \t")
+			log.Printf("argword: %q", argword)
 			if len(a) == 0 {
 				continue
 			}
-			if MatchIdentifier.FindString(a) != a {
-				panic("not an identifier: " + a)
+
+			mfa := MatchFormalArg.FindStringSubmatch(a)
+			log.Printf("MatchFormalArg: %#v", mfa)
+			if mfa == nil {
+				Fatalf("MatchFormalArg fails on %q", a)
 			}
-			argwords = append(argwords, a)
+			argwords = append(argwords, mfa[1])
+		}
+
+		if inline && !po.Inlining {
+			Fprintf(po.W, "func %s ( %s ) %s {\n", name, arglist, retType)
+		} else {
+			Fprintln(po.W, "")
 		}
 
 		var body []string
@@ -167,8 +206,14 @@ func (po *Po) DoLine(i int) int {
 		for {
 			i++
 			lineNum++
-			Fprintln(po.W, "")
 			b := po.Lines[i]
+
+			if inline && !po.Inlining {
+				Fprintln(po.W, po.SubstitueMacros(b))
+			} else {
+				Fprintln(po.W, "")
+			}
+
 			mr := MatchMacroReturn.FindStringSubmatch(b)
 			if mr == nil {
 				// Just a body line.
@@ -187,22 +232,27 @@ func (po *Po) DoLine(i int) int {
 		if MatchMacroFinal.FindString(b) == "" {
 			panic("Expected final CloseBrace alone on a line after macro return line")
 		}
-		Fprintln(po.W, "")
+		if inline && !po.Inlining {
+			Fprintln(po.W, "}")
+		} else {
+			Fprintln(po.W, "")
+		}
 
 		if _, ok := po.Macros[name]; ok {
 			panic("macro already defined: " + name)
 		}
 
 		po.Macros[name] = &Macro{
-			Args:   argwords,
-			Body:   body,
-			Result: result,
+			Inline:  inline,
+			Args:    argwords,
+			Body:    body,
+			Result:  result,
+			RetType: retType,
 		}
 
-		s = ""
+	} else {
+		Fprintln(po.W, po.SubstitueMacros(s))
 	}
-
-	Fprintln(po.W, po.SubstitueMacros(s))
 	return i + 1
 }
 

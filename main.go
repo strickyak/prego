@@ -30,25 +30,34 @@ var Switches = make(map[string]bool)
 // Sources may be added with ` --source filename ` args.
 var Sources []string
 
+var Inlining = true
+
 // ParseArgs accepts argument pairs:
 //    --set varname      (sets the varname true for conditional compilation)
-//    -set varname       (same)
 //    --source filename   (read for macro definitions; do not output lines)
-//    -source filename    (same)
+//    --noinline           for debugging, do not inline.
 func ParseArgs() {
 	args := os.Args[1:] // Leave off command name.
 
-	for len(args) > 1 && strings.HasPrefix(args[0], "-") {
-		key, value := args[0], args[1]
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		key := args[0]
 		switch key {
-		case "-set", "--set":
+		case "--set":
+			value := args[1]
 			Switches[value] = true
-		case "-source", "--source":
+			args = args[2:]
+			continue
+		case "--source":
+			value := args[1]
 			Sources = append(Sources, value)
-		default:
-			log.Fatalf("Unknown command line flag: %q", key)
+			args = args[2:]
+			continue
+		case "--noinline":
+			Inlining = false
+			args = args[1:]
+			continue
 		}
-		args = args[2:]
+		log.Fatalf("Unknown command line flag: %q", key)
 	}
 	if len(args) > 0 {
 		log.Fatalf("Extra command line arguments: %#v", args)
@@ -77,6 +86,7 @@ func main() {
 		Stack:    []bool{true},
 		W:        os.Stdout,
 		Enabled:  true,
+		Inlining: Inlining,
 	}
 
 	// Slurp the Source files into the Sink.

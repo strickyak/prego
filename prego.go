@@ -17,7 +17,7 @@ var MatchCond = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*([A-Za-z0-9_]
 var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*(inline|macro)\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]([^{}]*)[{]`)
 var MatchMacroReturn = regexp.MustCompile(`^\s*return\s*(.*)$`)
 var MatchMacroFinal = regexp.MustCompile(`^\s*[}]\s*$`)
-var MatchMacroCall = regexp.MustCompile(`\b(?:inline|macro)[.]([A-Za-z0-9_]+)[(]`)
+var MatchMacroCall = regexp.MustCompile(`\b(?:inline|macro)\s*[.]\s*([A-Za-z0-9_]+)\s*[(]`)
 var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
 var MatchFormalArg = regexp.MustCompile(`([A-Za-z0-9_]+) *([^(),]*)`)
 
@@ -68,6 +68,16 @@ func SuffixNumbers(s string) string {
 }
 
 func (po *Po) SubstitueMacros(s string) string {
+	for {
+		z := po.SubstitueMacrosOnce(s)
+		if z == s {
+			return z
+		}
+		s = z
+	}
+}
+
+func (po *Po) SubstitueMacrosOnce(s string) string {
 	serial := po.Serial
 	po.Serial++
 
@@ -87,6 +97,11 @@ func (po *Po) SubstitueMacros(s string) string {
 	var argwords []string
 	for {
 		n := ParseArg(rest)
+		// TODO: this needs work (what about white space, trailing `,` ... )
+		if n == 0 && rest[0] == ')' {
+			rest = rest[n+1:]
+			break
+		}
 		word := po.SubstitueMacros(rest[:n])
 		argwords = append(argwords, word)
 		delim := rest[n]

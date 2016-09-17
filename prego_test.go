@@ -2,6 +2,7 @@ package prego_test
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,12 @@ var Macros = map[string]*Macro{
 		Body:   []string{"___z := A + B"},
 		Result: "(___z)",
 	},
+}
+
+var SerialMatch = regexp.MustCompile("_[0-9]+_")
+
+func RemoveSerialMatches(s string) string {
+	return SerialMatch.ReplaceAllLiteralString(s, "_000_")
 }
 
 func TestMacros(t *testing.T) {
@@ -55,7 +62,7 @@ _5___z := 100 +  11;  println((_5___z))
 	t.Log("s1:", s1, "$")
 	t.Log("e1:", e1, "$")
 	t.Log("r1:", r1, "$")
-	if e1 != r1 {
+	if RemoveSerialMatches(e1) != RemoveSerialMatches(r1) {
 		t.Errorf("e1 != r1")
 	}
 }

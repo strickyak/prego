@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+var MatchPlusBuildPrego = regexp.MustCompile(`^\s*//\s*[+]build\s+(prego)\s*$`)
+var MatchPlusBuild = regexp.MustCompile(`^\s*//\s*[+]build\s+(.*)$`)
+
 // MatchCond looks for "//#word" (for some word) (as first nonwhite chars)
 // followed by possibly identifier (after some whitespace).
 var MatchCond = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
@@ -21,7 +24,7 @@ var MatchMacroCall = regexp.MustCompile(`\b(?:inline|macro)\s*[.]\s*([A-Za-z0-9_
 var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
 var MatchFormalArg = regexp.MustCompile(`([A-Za-z0-9_]+) *([^(),]*)`)
 
-var MatchNumberSuffix = regexp.MustCompile(`^(.*)\b([0-9]+)\s*[[]\s*([A-Za-z0-9_]+)\s*[]](.*)$`)
+var MatchEndsWithOpenCurly = regexp.MustCompile(`.*{\s*`)
 
 type Macro struct {
 	Inline  bool // T if `inline`, F if `macro`
@@ -39,36 +42,28 @@ type Po struct {
 	Serial   int
 	Enabled  bool
 	Lines    []string
+	I        int
 	Inlining bool
 }
 
-func Fatalf(s string, args ...interface{}) {
-	log.Fatalf("prego preprocessor: ERROR: "+s, args...)
+func (po *Po) Fatalf(s string, args ...interface{}) {
+	args = append(args, po.I+1)
+	log.Fatalf("prego preprocessor: ERROR: "+s+" (at line %d)", args...)
 }
 
 func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) string {
 	if z, ok := subs[s]; ok {
 		return z
 	}
-	if strings.HasPrefix(s, "___") {
+	if strings.HasPrefix(s, "__") {
 		return Sprintf("_%d%s", serial, s)
-	}
-	return s
-}
-
-func SuffixNumbers(s string) string {
-	for {
-		m := MatchNumberSuffix.FindStringSubmatch(s)
-		if m == nil {
-			break
-		}
-		s = Sprintf("%s %s_%s %s", m[1], m[3], m[2], m[4])
 	}
 	return s
 }
 
 func (po *Po) SubstitueMacros(s string) string {
 	for {
+		//log.Printf("## SubstitueMacros:::::::: %s", s)
 		z := po.SubstitueMacrosOnce(s)
 		if z == s {
 			return z
@@ -78,16 +73,17 @@ func (po *Po) SubstitueMacros(s string) string {
 }
 
 func (po *Po) SubstitueMacrosOnce(s string) string {
+	//log.Printf("## SubstitueMacrosOnce <<<< %s", s)
 	serial := po.Serial
 	po.Serial++
 
 	m := MatchMacroCall.FindStringSubmatchIndex(s)
 	if m == nil {
-		return SuffixNumbers(s)
+		return s
 	}
 
 	if len(m) != 4 {
-		Fatalf("bad len from MatchMacroCall.FindStringSubmatchIndex")
+		po.Fatalf("bad len from MatchMacroCall.FindStringSubmatchIndex")
 	}
 
 	front := s[:m[0]]
@@ -102,7 +98,8 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 			rest = rest[n+1:]
 			break
 		}
-		word := po.SubstitueMacros(rest[:n])
+		//word := po.SubstitueMacros(rest[:n])
+		word := rest[:n]
 		argwords = append(argwords, word)
 		delim := rest[n]
 		rest = rest[n+1:]
@@ -111,13 +108,18 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 		}
 	}
 
+	//log.Printf("SUB: name=%q", name)
+	//for iii, aaa := range argwords {
+	//log.Printf("SUB: arg[%i]=%q", iii, aaa)
+	//}
+
 	macro, ok := po.Macros[name]
 	if !ok {
-		Fatalf("unknown macro: %q", name)
+		po.Fatalf("unknown macro: %q", name)
 	}
-	log.Printf("Applying macro %q formals %v got %v", name, macro.Args, argwords)
+	//log.Printf("Applying macro %q formals %v got %v", name, macro.Args, argwords)
 	if len(argwords) != len(macro.Args) {
-		Fatalf("got %d args for macro %q, but wanted %d args", len(argwords), name, len(macro.Args))
+		po.Fatalf("got %d args for macro %q, but wanted %d args", len(argwords), name, len(macro.Args))
 	}
 
 	subs := make(map[string]string)
@@ -130,20 +132,28 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 
 		replacer := func(word string) string { return po.replaceFromMap(word, subs, serial) }
 
+		Fprintf(po.W, " /*macro:%s{*/ ", name)
 		for _, line := range macro.Body {
 			if len(line) > 0 {
 				l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
 				l3 := po.SubstitueMacros(l2)
-				Fprint(po.W, l3+";")
+				if MatchEndsWithOpenCurly.FindStringSubmatch(l3) == nil {
+					Fprint(po.W, l3+"; ")
+				} else {
+					// Helps with the newline between `switch` and `case`.
+					Fprint(po.W, l3+" ")
+				}
 			}
 		}
+		Fprintf(po.W, " /*macro}*/ ")
 
 		z = MatchIdentifier.ReplaceAllStringFunc(macro.Result, replacer)
 
 	} else {
-		z = Sprintf("%s(%s)", name, strings.Join(argwords, ", "))
+		z = Sprintf("/*noinline:*/%s(%s)", name, strings.Join(argwords, ", "))
 	}
-	return SuffixNumbers(front + z + po.SubstitueMacros(rest))
+	//log.Printf("## SubstitueMacrosOnce >>>> %s", s)
+	return front + z + rest
 }
 
 func (po *Po) calculateIsEnabled() bool {
@@ -158,6 +168,17 @@ func (po *Po) calculateIsEnabled() bool {
 func (po *Po) DoLine(i int) int {
 	s := po.Lines[i]
 	lineNum := i + 1
+	mplusprego := MatchPlusBuildPrego.FindStringSubmatch(s)
+	if mplusprego != nil {
+		Fprintf(po.W, "//\n")
+		return i + 1
+	}
+	mplus := MatchPlusBuild.FindStringSubmatch(s)
+	if mplus != nil {
+		// Delete all "prego" from the +build line.
+		Fprintf(po.W, "// +build %s\n", strings.Replace(mplus[1], "prego", "", -1))
+		return i + 1
+	}
 
 	// First process cond (//#if & //#endif).
 	m := MatchCond.FindStringSubmatch(s)
@@ -169,11 +190,11 @@ func (po *Po) DoLine(i int) int {
 		case "endif":
 			n := len(po.Stack)
 			if n < 2 {
-				Fatalf("Line %d: Unmatched #endif", lineNum)
+				po.Fatalf("Line %d: Unmatched #endif", lineNum)
 			}
 			po.Stack = po.Stack[:n-1]
 		default:
-			Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
+			po.Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
 		}
 		// The directive becomes a blank line below.
 		s = ""
@@ -192,20 +213,20 @@ func (po *Po) DoLine(i int) int {
 		name := mm[2]
 		arglist := mm[3]
 		retType := mm[4]
-		log.Printf("Def: name %q arglist %#v", name, arglist)
+		//log.Printf("Def: name %q arglist %#v", name, arglist)
 
 		var argwords []string
 		for _, argword := range strings.Split(arglist, ",") {
 			a := strings.Trim(argword, " \t")
-			log.Printf("argword: %q", argword)
+			//log.Printf("argword: %q", argword)
 			if len(a) == 0 {
 				continue
 			}
 
 			mfa := MatchFormalArg.FindStringSubmatch(a)
-			log.Printf("MatchFormalArg: %#v", mfa)
+			//log.Printf("MatchFormalArg: %#v", mfa)
 			if mfa == nil {
-				Fatalf("MatchFormalArg fails on %q", a)
+				po.Fatalf("MatchFormalArg fails on %q", a)
 			}
 			argwords = append(argwords, mfa[1])
 		}
@@ -284,8 +305,8 @@ func (po *Po) Slurp(r io.Reader, w io.Writer) {
 
 	po.W = w
 	po.Lines = lines
-	i := 0
-	for i < len(lines) {
-		i = po.DoLine(i)
+	po.I = 0
+	for po.I < len(lines) {
+		po.I = po.DoLine(po.I)
 	}
 }

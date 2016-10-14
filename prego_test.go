@@ -8,6 +8,10 @@ import (
 )
 import . "github.com/strickyak/prego"
 
+var SERIAL = regexp.MustCompile("_[0-9]+_")
+var COMMENT = regexp.MustCompile("[/][*].*?[*][/]")
+var WHITE = regexp.MustCompile("[ \t\n\r]+")
+
 var Vars = make(map[string]bool)
 
 var Macros = map[string]*Macro{
@@ -23,10 +27,11 @@ var Macros = map[string]*Macro{
 	},
 }
 
-var SerialMatch = regexp.MustCompile("_[0-9]+_")
-
 func RemoveSerialMatches(s string) string {
-	return SerialMatch.ReplaceAllLiteralString(s, "_000_")
+	s = SERIAL.ReplaceAllLiteralString(s, "_000_")
+	s = COMMENT.ReplaceAllLiteralString(s, " ")
+	s = WHITE.ReplaceAllLiteralString(s, " ")
+	return s
 }
 
 func TestMacros(t *testing.T) {

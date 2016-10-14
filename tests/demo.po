@@ -13,14 +13,6 @@ func (inline) SUM(A int, B int) int {
 	return ___z
 }
 
-func (macro) sumsq(X) {
-	return 1[X]*1[X] + 2[X]*2[X]
-}
-
-func (macro) comma(X) {
-	return 1[X], 2[X]
-}
-
 func (macro) ASSIGN(v, a) {
 	/* Only slash-star comments are OK in a macro. */
 	v = (a)
@@ -50,7 +42,4 @@ func main() {
 	macro.ASSIGN(y, 42)
 	fmt.Println("x =", x, "; y =", y)
 	fmt.Println("x < y ?", macro.cond(x < y, "Yes", "No", string))
-
-	side_1, side_2 := 3, 4
-	fmt.Println("sumsq:", macro.comma(side), macro.sumsq(side))
 }

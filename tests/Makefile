@@ -2,19 +2,17 @@
 
 all: Run-demo Run-demo-noinline
 
-# Go does not allow `_` at front of .go files, but it does allow `,`.
-# So we mark temporary files with `,`.
 clean:
-	-rm -f ,_tmp_*
+	-rm -f tmp_*
 
 Run-demo:
-	go run ../main.go < demo.po > ,_tmp_demo_.go
-	go run ,_tmp_demo_.go > ,_tmp_demo_.out
-	diff demo.expect ,_tmp_demo_.out
+	go run ../main.go < demo.po > tmp_demo_.go
+	go run tmp_demo_.go > tmp_demo_.out
+	diff demo.expect tmp_demo_.out
 	echo Tests OKAY
 
 Run-demo-noinline:
-	go run ../main.go < demo.po > ,_tmp_demo_.go --noinline
-	go run ,_tmp_demo_.go > ,_tmp_demo_.out
-	diff demo.expect ,_tmp_demo_.out
+	go run ../main.go < demo.po > tmp_demo_.go --noinline
+	go run tmp_demo_.go > tmp_demo_.out
+	diff demo.expect tmp_demo_.out
 	echo Tests OKAY

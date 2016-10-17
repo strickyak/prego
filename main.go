@@ -42,6 +42,22 @@ func ParseArgs() {
 	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		key := args[0]
 		switch key {
+
+		case "--setchars":
+			value := args[1]
+
+			for _, ch := range value {
+				word := string([]byte{byte(ch)})
+				if _, ok := Switches[word]; ok {
+					// Since it occured before, add it doubled.
+					Switches[word+word] = true
+				} else {
+					Switches[word] = true
+				}
+			}
+			args = args[2:]
+			continue
+
 		case "--set":
 			value := args[1]
 			for _, s := range strings.Split(value, ",") {
@@ -51,11 +67,13 @@ func ParseArgs() {
 			}
 			args = args[2:]
 			continue
+
 		case "--source":
 			value := args[1]
 			Sources = append(Sources, value)
 			args = args[2:]
 			continue
+
 		case "--noinline":
 			Inlining = false
 			args = args[1:]
@@ -76,6 +94,10 @@ func (Sink) Write(p []byte) (n int, err error) {
 
 func main() {
 	ParseArgs()
+
+	for s := range Switches {
+		println("Switch is set:", s)
+	}
 
 	po := &prego.Po{
 		Macros:   make(map[string]*prego.Macro),

@@ -44,7 +44,11 @@ func ParseArgs() {
 		switch key {
 		case "--set":
 			value := args[1]
-			Switches[value] = true
+			for _, s := range strings.Split(value, ",") {
+				if len(s) < 0 {
+					Switches[s] = true
+				}
+			}
 			args = args[2:]
 			continue
 		case "--source":

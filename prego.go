@@ -4,19 +4,23 @@ import . "fmt"
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"regexp"
 	"strings"
+	"text/scanner"
 )
 
 var MatchPlusBuildPrego = regexp.MustCompile(`^\s*//\s*[+]build\s+(prego)\s*$`)
 var MatchPlusBuild = regexp.MustCompile(`^\s*//\s*[+]build\s+(.*)$`)
 
-// MatchCond looks for "//#word" (for some word) (as first nonwhite chars)
-// followed by possibly identifier (after some whitespace).
-var MatchCond = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*([A-Za-z0-9_]*)[ \t]*$`)
+// MatchDirective looks for "//#word" (for some word) (as first nonwhite chars)
+// possibly followed by other stuff.
+var MatchDirective = regexp.MustCompile(`[ \t]*//\s*[#]\s*([a-z]+)[ \t]*(.*)*$`)
 
+var MatchBeforeSlashSlash = regexp.MustCompile("(.*?)//")
+var MatchBug = regexp.MustCompile("[\"'`\\\\]")
 var MatchMacroDef = regexp.MustCompile(`^\s*func\s*[(]\s*(inline|macro)\s*[)]\s*([A-Za-z0-9_]+)\s*[(]([^()]*)[)]([^{}]*)[{]`)
 var MatchMacroReturn = regexp.MustCompile(`^\s*return\s*(.*)$`)
 var MatchMacroFinal = regexp.MustCompile(`^\s*[}]\s*$`)
@@ -25,6 +29,8 @@ var MatchIdentifier = regexp.MustCompile(`[A-Za-z0-9_]+`)
 var MatchFormalArg = regexp.MustCompile(`([A-Za-z0-9_]+) *([^(),]*)`)
 
 var MatchEndsWithOpenCurly = regexp.MustCompile(`.*{\s*`)
+var MatchBeginsWithIf = regexp.MustCompile(`\s*if\s+.*`)
+var MatchOneQuote = regexp.MustCompile(`^[^"]*["][^"]*$`)
 
 type Macro struct {
 	Inline  bool // T if `inline`, F if `macro`
@@ -63,7 +69,6 @@ func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) strin
 
 func (po *Po) SubstitueMacros(s string) string {
 	for {
-		//log.Printf("## SubstitueMacros:::::::: %s", s)
 		z := po.SubstitueMacrosOnce(s)
 		if z == s {
 			return z
@@ -73,7 +78,6 @@ func (po *Po) SubstitueMacros(s string) string {
 }
 
 func (po *Po) SubstitueMacrosOnce(s string) string {
-	//log.Printf("## SubstitueMacrosOnce <<<< %s", s)
 	serial := po.Serial
 	po.Serial++
 
@@ -90,6 +94,11 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 	name := s[m[2]:m[3]]
 	rest := s[m[1]:]
 
+	if MatchOneQuote.FindStringSubmatch(front) != nil {
+		// Grand hack.   We must be in a string, so don't expand what looked like a macro.
+		return s
+	}
+
 	var argwords []string
 	for {
 		n := ParseArg(rest)
@@ -98,7 +107,6 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 			rest = rest[n+1:]
 			break
 		}
-		//word := po.SubstitueMacros(rest[:n])
 		word := rest[:n]
 		argwords = append(argwords, word)
 		delim := rest[n]
@@ -108,16 +116,10 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 		}
 	}
 
-	//log.Printf("SUB: name=%q", name)
-	//for iii, aaa := range argwords {
-	//log.Printf("SUB: arg[%i]=%q", iii, aaa)
-	//}
-
 	macro, ok := po.Macros[name]
 	if !ok {
 		po.Fatalf("unknown macro: %q", name)
 	}
-	//log.Printf("Applying macro %q formals %v got %v", name, macro.Args, argwords)
 	if len(argwords) != len(macro.Args) {
 		po.Fatalf("got %d args for macro %q, but wanted %d args", len(argwords), name, len(macro.Args))
 	}
@@ -137,6 +139,9 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 			if len(line) > 0 {
 				l2 := MatchIdentifier.ReplaceAllStringFunc(line, replacer)
 				l3 := po.SubstitueMacros(l2)
+				if MatchBeginsWithIf.FindStringSubmatch(l3) != nil {
+					Fprint(po.W, " ;;; ")
+				}
 				if MatchEndsWithOpenCurly.FindStringSubmatch(l3) == nil {
 					Fprint(po.W, l3+"; ")
 				} else {
@@ -152,7 +157,6 @@ func (po *Po) SubstitueMacrosOnce(s string) string {
 	} else {
 		z = Sprintf("/*noinline:*/%s(%s)", name, strings.Join(argwords, ", "))
 	}
-	//log.Printf("## SubstitueMacrosOnce >>>> %s", s)
 	return front + z + rest
 }
 
@@ -163,6 +167,39 @@ func (po *Po) calculateIsEnabled() bool {
 		}
 	}
 	return true
+}
+
+func Tidy(t string) string {
+	r := bytes.NewBufferString(t)
+	var s scanner.Scanner
+	s.Mode = scanner.GoTokens
+	s.Whitespace = scanner.GoWhitespace
+	s.Init(r)
+	var w bytes.Buffer
+	for {
+		r := s.Peek()
+		if r == scanner.EOF {
+			break
+		}
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			w.WriteRune(r)
+			s.Next()
+			continue
+		}
+
+		token := s.Scan()
+		if token == scanner.EOF {
+			break
+		}
+		if token < 0 {
+			w.WriteString(" ")
+		}
+		w.WriteString(s.TokenText())
+		if token < 0 {
+			w.WriteString(" ")
+		}
+	}
+	return w.String()
 }
 
 func (po *Po) DoLine(i int) int {
@@ -181,11 +218,21 @@ func (po *Po) DoLine(i int) int {
 	}
 
 	// First process cond (//#if & //#endif).
-	m := MatchCond.FindStringSubmatch(s)
+	m := MatchDirective.FindStringSubmatch(s)
 	if m != nil {
 		switch m[1] {
 		case "if":
-			pred, _ := po.Switches[m[2]]
+			pred := false
+			for _, term := range strings.Split(m[2], "||") {
+				term = strings.Trim(term, " \t")
+				if MatchIdentifier.FindString(term) != term {
+					po.Fatalf("Line %d: not an identifier: %q", lineNum, term)
+				}
+				p, _ := po.Switches[term]
+				if p {
+					pred = true
+				}
+			}
 			po.Stack = append(po.Stack, pred)
 		case "endif":
 			n := len(po.Stack)
@@ -213,18 +260,15 @@ func (po *Po) DoLine(i int) int {
 		name := mm[2]
 		arglist := mm[3]
 		retType := mm[4]
-		//log.Printf("Def: name %q arglist %#v", name, arglist)
 
 		var argwords []string
 		for _, argword := range strings.Split(arglist, ",") {
 			a := strings.Trim(argword, " \t")
-			//log.Printf("argword: %q", argword)
 			if len(a) == 0 {
 				continue
 			}
 
 			mfa := MatchFormalArg.FindStringSubmatch(a)
-			//log.Printf("MatchFormalArg: %#v", mfa)
 			if mfa == nil {
 				po.Fatalf("MatchFormalArg fails on %q", a)
 			}
@@ -287,7 +331,7 @@ func (po *Po) DoLine(i int) int {
 		}
 
 	} else {
-		Fprintln(po.W, po.SubstitueMacros(s))
+		Fprintln(po.W, po.SubstitueMacros(Tidy(s)))
 	}
 	return i + 1
 }

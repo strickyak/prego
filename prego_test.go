@@ -61,9 +61,16 @@ func main() {
   //#if never
   println(666)
   //#endif
+
   //#endif
+
   //#if never
   println(666.666)
+
+  //#if beta
+  println(6.66)
+  //#endif
+
   //#endif
 }
 `

@@ -8,27 +8,30 @@ import (
 )
 import . "github.com/strickyak/prego"
 
-var SERIAL = regexp.MustCompile("_[0-9]+_")
-var COMMENT = regexp.MustCompile("[/][*].*?[*][/]")
-var WHITE = regexp.MustCompile("[ \t\n\r]+")
-
-var Vars = make(map[string]bool)
+var SERIAL = regexp.MustCompile(`_[0-9]+_`)
+var COMMENT = regexp.MustCompile(`[/][*].*?[*][/]`)
+var WHITE = regexp.MustCompile(`[ \t\n\r]+`)
 
 var Macros = map[string]*Macro{
 	"DOUBLE": &Macro{
-		Args:   []string{"X"},
-		Body:   []string{},
-		Result: "(X + X)",
+		Args:   []string{"A"},
+		Body:   []string{"__a := A"},
+		Result: "(__a + __a)",
 	},
 	"SUM": &Macro{
 		Args:   []string{"A", "B"},
 		Body:   []string{"___z := A + B"},
 		Result: "(___z)",
 	},
+	"PRODUCT": &Macro{
+		Args:   []string{"A", "B"},
+		Body:   []string{"___z := A * B"},
+		Result: "(___z)",
+	},
 }
 
 func RemoveSerialMatches(s string) string {
-	s = SERIAL.ReplaceAllLiteralString(s, "_000_")
+	s = SERIAL.ReplaceAllLiteralString(s, "_0_")
 	s = COMMENT.ReplaceAllLiteralString(s, " ")
 	s = WHITE.ReplaceAllLiteralString(s, " ")
 	return s
@@ -44,17 +47,41 @@ func TestMacros(t *testing.T) {
 		Enabled:  true,
 	}
 
-	s1 := `package main
+	s1 := `
+package main
 func main() {
   println(macro.DOUBLE(444))
+  //#if alpha
   println(macro.SUM(100, 11))
-}`
-	// TODO: println(macro.SUM(macro.DOUBLE(100), macro.DOUBLE(11)))
 
-	e1 := `package main
-func main() {
-  println((444 + 444))
-_5___z := 100 +  11;  println((_5___z))
+  //#if beta
+  println(macro.DOUBLE(macro.PRODUCT(1000, macro.SUM(50, 5))))
+  //#endif
+
+  //#if never
+  println(666)
+  //#endif
+  //#endif
+  //#if never
+  println(666.666)
+  //#endif
+}
+`
+
+	e1 := `
+package main
+func main () {
+
+  _0__a := 444 ;
+  println ( (_0__a + _0__a))
+
+  _0___z := 100 + 11 ;
+  println ( (_0___z))
+
+   _0___z := 50 + 5 ;
+   _0___z := 1000 * (_0___z);
+   _0__a := (_0___z);
+   println ( (_0__a + _0__a))
 }
 `
 
@@ -67,6 +94,8 @@ _5___z := 100 +  11;  println((_5___z))
 	t.Log("s1:", s1, "$")
 	t.Log("e1:", e1, "$")
 	t.Log("r1:", r1, "$")
+	t.Log("Re1:", RemoveSerialMatches(e1), "$")
+	t.Log("Rr1:", RemoveSerialMatches(r1), "$")
 	if RemoveSerialMatches(e1) != RemoveSerialMatches(r1) {
 		t.Errorf("e1 != r1")
 	}

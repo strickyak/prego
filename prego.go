@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"io"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 	"text/scanner"
@@ -32,6 +33,8 @@ var MatchEndsWithOpenCurly = regexp.MustCompile(`.*{\s*`)
 var MatchBeginsWithIf = regexp.MustCompile(`\s*if\s+.*`)
 var MatchOneQuote = regexp.MustCompile(`^[^"]*["][^"]*$`)
 
+var logWarning = log.New(os.Stderr, "", 0)
+
 type Macro struct {
 	Inline  bool // T if `inline`, F if `macro`
 	Args    []string
@@ -55,6 +58,11 @@ type Po struct {
 func (po *Po) Fatalf(s string, args ...interface{}) {
 	args = append(args, po.I+1)
 	log.Fatalf("prego preprocessor: ERROR: "+s+" (at line %d)", args...)
+}
+
+func (po *Po) Warningf(s string, args ...interface{}) {
+	args = append(args, po.I+1)
+	logWarning.Printf("prego preprocessor: WARNING: "+s+" (at line %d)", args...)
 }
 
 func (po *Po) replaceFromMap(s string, subs map[string]string, serial int) string {
@@ -241,7 +249,9 @@ func (po *Po) DoLine(i int) int {
 			}
 			po.Stack = po.Stack[:n-1]
 		default:
-			po.Fatalf("Line %d: Unknown control: %q", lineNum, m[1])
+			po.Warningf("Line %d: Unknown control: %q", lineNum, m[1])
+			Fprintf(po.W, s+"\n")
+			return i + 1
 		}
 		// The directive becomes a blank line below.
 		s = ""
